@@ -34,11 +34,16 @@ class CausalSelfAttention(nn.Module):
   def attention(self, key, query, value, attention_mask):
     qk_mat = torch.matmul(query, key.transpose(2, 3))
     d_k = query.shape[-1]
-    scale = qk_mat * (1 / (d_k ** 0.5))
-    masked_mat = torch.add(scale, attention_mask)
-    softmax_mat = torch.softmax(masked_mat, dim=3)
-    z_mat = torch.matmul(softmax_mat, value)
+    scale = qk_mat / (d_k ** 0.5)
+    seq_len = scale.size(-1)
+    causal_mask = torch.tril(torch.ones((seq_len, seq_len))).view(1, 1, seq_len, seq_len)
+    casual_masked_mat = torch.where(causal_mask == 1, scale, torch.tensor(-1e4))
+    # masked_mat = torch.add(scale, attention_mask) -> ?
+    softmax_mat = torch.softmax(casual_masked_mat, dim=3)
+    dropout_mat = self.dropout(softmax_mat)
+    z_mat = torch.matmul(dropout_mat, value)
     z_mat = rearrange(z_mat, 'b h t d -> b t (h d)')
+    return z_mat
 
   def forward(self, hidden_states, attention_mask):
     """
